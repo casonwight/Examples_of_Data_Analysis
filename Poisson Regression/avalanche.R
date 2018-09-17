@@ -1,5 +1,5 @@
 #Model number of avalanches in snow season months
-
+# This is just a comment
 #Avalanche Data###########
 avalanche <- read.csv(stringsAsFactors = FALSE, text="
                       Nid,Date,Region,Location Name or Route,Ignore1,Ignore2,Ignore3,Ignore4,Ignore5
