@@ -141,13 +141,14 @@ summary(abs(diamonds$Price-exp(predict(out.diamonds))))
 # and model the percent body fat from that variable in the same way we just estimated price.
 
 
-
+# Plotting different characteristics of the diamonds
 plot1 <- qplot(as.factor(diamonds$Cert), main = "Certification Agency", xlab = "Certificate")
 plot2 <- qplot(as.factor(diamonds$Clarity), main = "Clarity", xlab = "Clarity")
 plot3 <- qplot(diamonds$Carat, main = "Carat", xlab = "Carat", bins = 20, xlim = c(-.01, 1.2))
 plot4 <- qplot(as.factor(diamonds$Color), main = "Color", xlab = "Color")
 grid.arrange(plot1, plot2, plot3, plot4, ncol=2)
 
+# Plotting distribution of diamond sizes
 ggplot(diamonds, aes(Carat)) +
   geom_histogram(binwidth = .01) + 
   ggtitle("Distribution of Diamond Sizes") + 
@@ -167,7 +168,7 @@ ggplot(data = forplot,aes(x = len, y = fit, ymin = lwr, ymax = upr)) +
        x = "Carat", y = "Price (in Singapore Dollars)")
 
 
-
+# Plotting different characteristics
 plot5 <- qplot(x = diamonds$Carat, y = diamonds$Price, main = "Diamond Price by Carat", xlab = "Carat", ylab = "Price (in Singapore Dollars)")
 plot6 <- qplot(x = diamonds$Color, y = diamonds$Price, main = "Diamond Price by Color", xlab = "Color (1 is best and 6 is worst)", ylab = "Price (in Singapore Dollars)")
 plot7 <- qplot(x = diamonds$Clarity, y = diamonds$Price, main = "Diamond Price by Clarity", xlab = "Clarity (1 is best and 5 is worst)", ylab = "Price (in Singapore Dollars)")
@@ -175,7 +176,7 @@ plot7 <- qplot(x = diamonds$Clarity, y = diamonds$Price, main = "Diamond Price b
 grid.arrange(plot6, plot5, plot7, ncol=2)
 
 
-
+# Model Summary
 out.diamonds <- lm(lnPrice ~ lnCarat, data = diamonds)
 summary(out.diamonds)
 confint(out.diamonds)

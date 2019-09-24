@@ -1,5 +1,5 @@
 #Model number of avalanches in snow season months
-# This is just a comment
+
 #Avalanche Data###########
 avalanche <- read.csv(stringsAsFactors = FALSE, text="
                       Nid,Date,Region,Location Name or Route,Ignore1,Ignore2,Ignore3,Ignore4,Ignore5
@@ -4130,7 +4130,7 @@ exp(confint(out.avalanche)[-1,])
 red.avalanche <- glm(Avalanches~SNOW, data=avalanche2,family="poisson")
 anova(red.avalanche,out.avalanche,test="Chisq")
 #X^2 test:p-value=.1094
-#There is no statistically significant temperature effect on mean monthly avalanches (p-value=.1094).
+#There is no statistically significant temperature effect onmean monthly avalanches (p-value=.1094).
 #For each additional degree of minimum monthly temperature, we estimate the mean monthly
 #number of avalanches will increase by 0.98% holding all else constant (CI -0.5%,2.4%)
 #For each additional below freezing day in a month, we estimate the mean monthly number 
@@ -4158,18 +4158,4 @@ predict(out.avalanche,newdata = data.frame(SNOW=4.65,TMIN=34.6,DT32=11.5),type="
 
 
 
-#Research Task:
-# Determine if there is an effect from snowfall or temperature on the number of avalanches 
-# in a month.
 
-#Data Features that Match Analysis Strengths:
-# Lots of data to help with analysis. 
-# poisson regression works well here because of discrete number of avalanches
-
-#Analysis Weaknesses:
-# More explanatory variables surrounding temperature would be useful
-# We could also break the data uo into smaller increments for better analysis
-
-#Challenge:
-# Data is found at https://stats.nba.com/players/traditional/?sort=PTS&dir=-1&Season=2017-18&SeasonType=Regular%20Season&LastNGames=15
-# How does the # of points scored (and other factors) effect how many wins each player got (out of the last 15)
