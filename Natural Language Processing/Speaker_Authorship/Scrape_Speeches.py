@@ -6,8 +6,6 @@ import sys
 import requests
 from datetime import datetime
 
-os.chdir('C:\\Users\\cason\\Desktop\\Classes\\Assignments\\Stat 666\\Final Project')
-
 speeches_URL = 'https://speeches.byu.edu'
 
 speakers = list(pd.read_csv('Talk_Quotes_Data.csv')['Speaker'].unique())

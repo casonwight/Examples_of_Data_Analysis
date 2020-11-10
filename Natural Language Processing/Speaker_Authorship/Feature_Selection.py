@@ -6,7 +6,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.feature_extraction.text import TfidfVectorizer
 import shelve
 
-os.chdir('C:\\Users\\cason\\Desktop\\Classes\\Assignments\\Stat 666\\Final Project')
 
 my_shelf = shelve.open('Feature_Selection_Results.out','n')
 

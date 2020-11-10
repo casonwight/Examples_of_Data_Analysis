@@ -9,7 +9,6 @@ import pickle
 import heapq
 
 # Read in all the data created by Analysis.py
-os.chdir("C:/Users/cason/Desktop/Classes/Assignments/Stat 536/Homework 7")
 X_train = pd.read_csv("X_train.csv").iloc[:,1:]
 X_test = pd.read_csv("X_test.csv").iloc[:,1:]
 Y_train = pd.read_csv("Y_train.csv")['Department']

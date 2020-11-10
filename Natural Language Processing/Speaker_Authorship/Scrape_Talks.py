@@ -6,8 +6,6 @@ import sys
 import requests
 from datetime import datetime
 
-os.chdir('C:\\Users\\cason\\Desktop\\Classes\\Assignments\\Stat 666\\Final Project')
-
 church_URL = 'https://www.churchofjesuschrist.org/'
 
 escapes = ''.join([chr(char) for char in range(1, 32)])

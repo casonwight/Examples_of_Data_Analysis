@@ -7,8 +7,6 @@ from sklearn.linear_model import LogisticRegression
 import pickle
 import shelve
 
-os.chdir('C:\\Users\\cason\\Desktop\\Classes\\Assignments\\Stat 666\\Final Project')
-
 my_shelf = shelve.open('Feature_Selection_Results.out')
 for key in my_shelf:
     globals()[key]=my_shelf[key]

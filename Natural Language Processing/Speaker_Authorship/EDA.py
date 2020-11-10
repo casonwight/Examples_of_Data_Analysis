@@ -8,7 +8,6 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 import matplotlib.pyplot as plt
 import datetime
 
-os.chdir('C:\\Users\\cason\\Desktop\\Classes\\Assignments\\Stat 666\\Final Project')
 
 my_shelf = shelve.open('Feature_Selection_Results.out')
 for key in my_shelf:
