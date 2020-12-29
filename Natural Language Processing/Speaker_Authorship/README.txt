@@ -36,3 +36,6 @@ are many appropriate methods, but this analysis will
 compare multinomial logistic regression (with regular-
 ization), support vector machines, and (to be done)
 deep neural nets.
+
+clean_analysis.py is a combination of all elements of 
+analysis (except for most EDA).

@@ -1,0 +1,399 @@
+---
+title: "Stat 651 HW 8"
+author: "Cason Wight"
+date: "11/10/2020"
+output: word_document
+---
+
+```{r setup, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(rstan)
+library(mvtnorm)
+library(GGally)
+set.seed(1)
+```
+
+
+## Problem 1 (Gelman 6.5)  
+
+Hypothesis testing: discuss the statement, ‘Null hypotheses of no difference are usually
+known to be false before the data are collected; when they are, their rejection or acceptance
+simply reflects the size of the sample and the power of the test, and is not a
+contribution to science’ (Savage, 1957, quoted in Kish, 1965). If you agree with this
+statement, what does this say about the model checking discussed in this chapter?
+
+## Problem 2  
+
+
+```{r Dahl.airline.setup, message=FALSE}
+d <- read.table(header=TRUE, file = textConnection(
+  " year accidents deaths rate
+    1976 24  734 0.19
+    1977 25  516 0.12
+    1978 31  754 0.15
+    1979 31  877 0.16
+    1980 22  814 0.14
+    1981 21  362 0.06
+    1982 26  764 0.13
+    1983 20  809 0.13
+    1984 16  223 0.03
+    1985 22 1066 0.15
+    1986 22  546 0.06
+  "
+))
+d$passengerMiles <- d$deaths / d$rate * 100000000  # Total number of miles flown by passengers
+e <- d[d$year!=1986,]
+
+ggpairs(d, title = "Pairplots for Airlines Data")
+```
+
+```{r tests}
+# Test general goodness-of-fit in 'residuals'
+test1 <- function(observed, expected) sum((observed - expected)^2 / expected)
+
+# Test for no monotonic trend in 'residuals'
+test2 <- function(observed, expected) cor(seq_along(observed), observed-expected, method="spearman")
+
+computePValue <- function(test, thetaSamples, y, yRep) {
+  statisticFromObserved <- statisticFromPredictive <- numeric(length(thetaSamples))
+  for ( i in seq_along(thetaSamples) ) {
+    statisticFromObserved[i]   <- test(y,        thetaSamples[i])
+    statisticFromPredictive[i] <- test(yRep[,i], thetaSamples[i])
+  }
+  c(mean=mean(statisticFromObserved), p.value=mean(statisticFromPredictive >= statisticFromObserved))
+}
+
+predictionInterval1986 <- function(y1986, yPredict1986, variable) {
+  predictionInterval <- quantile(yPredict1986, c(0.025, 0.975))
+  
+  density_1986_pred <- density(yPredict1986)
+  
+  density_plot <- cbind('Density' = density_1986_pred$y, 'x' = density_1986_pred$x) %>% 
+    as.data.frame() %>% 
+    ggplot(aes(x = x, y = Density)) +
+    geom_line(lwd = 1) + 
+    geom_vline(xintercept = c(y1986, predictionInterval), 
+               color = c(1,2,2), linetype = c(1,2,2)) + 
+    labs(title = paste0("Posterior Predictive Distribution for 1986 (",variable,")"),
+         subtitle = sprintf("Actual Value in 1986: %s",y1986),
+         xlab = "")
+  print(density_plot)
+  predictionInterval
+}
+```
+
+
+```{r Model1}
+# Model 1:
+#     y_i | theta       ~ Poisson(theta)
+#           theta       ~ Gamma(a,b)
+#   theta | y_1,...,y_n ~ Gamma(a+sum(y), b+length(y))
+#
+# Let a = 0, b = 0 (or, at least, a = 0.0001, b = 0.0001)
+
+doModel1 <- function(variable, nSamples=10000) {
+  a <- b <- 0
+  y <- e[,variable]
+  # Sample posterior
+  thetaSamples <- rgamma(nSamples, a+sum(y), b+length(y))
+  
+  ### Sample posterior predictive for 1986, using one of two methods...
+  # Method 1: Using Monte Carlo integration to marginalize over theta.
+  yPredict1986 <- rpois(length(thetaSamples), thetaSamples)  # Note we are using thetaSamples, not mean(thetaSamples)
+  # Method 2: Using conjugacy and calculus.  Careful with the parametrization!
+  yPredict1986 <- rnbinom(length(thetaSamples), a+sum(y), 1-1/(1+b+length(y)))
+  # Which method is more accurate?  This is a trick question!
+  
+  predictionInterval <- predictionInterval1986(d[d$year==1986,variable], yPredict1986, variable)
+  # Check model fit
+  # Generate replicated data using the posterior distribution of theta.
+  # Careful, "yRep <- rpois(1985-1976+1, thetaSamples)" is wrong.  Why?
+  yRep <- sapply(thetaSamples, function(theta) rpois(1985-1976+1, theta))
+  # Return results
+  list(predictionInterval=predictionInterval,
+    indep=computePValue(test1,thetaSamples,y,yRep),
+    trend=computePValue(test2,thetaSamples,y,yRep))
+}
+
+doModel1("accidents")
+doModel1("deaths")
+```
+
+```{r Model2}
+# Model 2:
+#     y_i | theta       ~ Poisson(x_i * theta)
+#           theta       ~ Gamma(a,b)
+#   theta | y_1,...,y_n ~ Gamma(a+sum(y), b+sum(x))
+#
+# Where x_i is the passengerMiles (total miles flown in a given year by all passengers).
+# Let a = 0, b = 0 (or, at least, a = 0.0001, b = 0.0001)
+
+doModel2 <- function(variable, x, nSamples=10000) {
+  a <- b <- 0
+  y <- e[,variable]
+  # Sample posterior
+  thetaSamples <- rgamma(nSamples, sum(y), sum(e$passengerMiles))
+  # Sample posterior predictive for 1986
+  yPredict1986 <- rpois(nSamples, x*thetaSamples)
+  predictionInterval <- predictionInterval1986(d[d$year==1986,variable], yPredict1986, variable)
+  # Check model fit
+  yRep <- sapply(thetaSamples, function(theta) rpois(1985-1976+1, e$passengerMiles*theta))
+  # Return results
+  list(predictionInterval=predictionInterval,
+    indep=computePValue(test1,thetaSamples,y,yRep),
+    trend=computePValue(test2,thetaSamples,y,yRep))
+}
+
+xValueForPrediction <- 8e11   # x_1986 = "Assumed number of passenger miles in 1986"
+doModel2("accidents", xValueForPrediction)
+doModel2("deaths", xValueForPrediction)
+```
+
+```{r Model3}
+# Model 3:
+#     y_i |  alpha, beta  ~ Poisson(alpha + beta * (year_i - 1976))
+#           (alpha, beta) ~ Uniform on a large rectangle, say, (16,42)x(-3,1)
+#
+# What is the interpretation of alpha?
+# What is the interpretation of beta?
+# How did I came up with this grid.  See the calls to 'lm' and 'optim' below.
+#
+# For simplicity, from now on, let's just focus on modeling the number of accidents.
+#
+logPrior <- function(alpha,beta) 0      # Unnormalized
+
+# Log likelihood contribution for item i.
+logLikelihoodI <- function(i,alpha,beta) {
+  lc <- alpha + beta * ( e$year - 1976 )
+  if (lc[i] <= 0) -Inf else dpois(e$accident[i], lc[i], log=TRUE)
+}
+
+# Full log likelihood
+logLikelihood <- function(alpha,beta) {
+  sum(sapply(seq_along(e$year), function(i) logLikelihoodI(i,alpha,beta)))
+}
+
+logPosterior <- function(alpha,beta) {  # Unnormalized
+  logLikelihood(alpha,beta) + logPrior(alpha,beta)
+}
+
+summary(lm(accidents ~ I(year-1976), data=e))
+optim(c(28,-0.9212),function(x) -logPosterior(x[1],x[2]))
+
+# Griddy sampling method
+samplePosteriorUsingGrid <- function(nSamples=1000, nBreaks=100) {
+  grid.alpha <- seq(16,42,length=nBreaks)
+  grid.beta <-  seq(-3,1,length=nBreaks)
+  grid <- expand.grid(grid.alpha,grid.beta)
+  logPOnGrid <- apply(grid, 1, function(params) logPosterior(params[1],params[2]))
+  logPAlphaBetaGivenY <- matrix(logPOnGrid, nrow=length(grid.alpha))
+  pAlphaBetaGivenY <- exp(logPAlphaBetaGivenY - max(logPAlphaBetaGivenY))  # Stabalize computations
+  pAlphaGivenY <- apply(pAlphaBetaGivenY, 1, sum)   # Marginalize over beta.
+  alpha <- sample(grid.alpha, size=nSamples, prob=pAlphaGivenY, replace=TRUE)
+  beta <- sapply(alpha, function(a) sample(grid.beta,1,prob=pAlphaBetaGivenY[grid.alpha==a,]))
+  width.alpha <- grid.alpha[2]-grid.alpha[1]
+  alpha <- alpha + runif(length(alpha),-width.alpha/2, width.alpha/2)
+  width.beta <- grid.beta[2]-grid.beta[1]
+  beta <- beta + runif(length(beta),-width.beta/2, width.beta/2)
+  cbind(alpha,beta)
+}
+
+samples <- samplePosteriorUsingGrid() %>% as.data.frame()
+ggplot(samples, aes(x = alpha, y = beta)) + 
+  geom_point() +
+  labs(title = "Posterior Samples", x = expression(alpha), y = expression(beta))
+apply(samples,2,mean)
+
+# Predictive for 1986
+x <- 1986-1976
+yPredict1986 <- rpois(nrow(samples), samples[,1] + samples[,2]*x)
+predictionInterval <- predictionInterval1986(d[d$year==1986,"accidents"], yPredict1986, 'accidents')
+
+
+# Posterior predictive checks 
+xs <- 1976:1985 - 1976
+yRep <- sapply(1:nrow(samples), function(i) rpois(x+1, samples[i,1] + samples[i,2] * xs))
+```
+
+
+```{r p.val.2}
+computePValue2 <- function(test) {
+  statisticFromPredictive <- sapply(1:nrow(samples), function(i) test(yRep[,i],samples[i,1]+samples[i,2]*xs))
+  statisticFromObserved <- sapply(1:nrow(samples), function(i) test(e$accidents,samples[i,1]+samples[i,2]*xs))
+  mean(statisticFromPredictive >= statisticFromObserved)
+}
+```
+
+
+```{r}
+## Test general goodness-of-fit in 'residuals'
+computePValue2(test1)
+
+## Test for no monotonic trend in 'residuals'
+computePValue2(test2)
+```
+
+Recall the airline accidents data and the three competing models for the number of accidents, 
+discussed previously. Now consider the following fourth model for the number of accidents:
+
+$$\begin{align}
+y_i|\tau_i&\sim\text{Poisson}(\tau_i) \\
+\tau_i|\lambda&\sim \text{Normal}^+(\tau,\lambda) \\
+\lambda&\sim\text{Gamma}(c,d),
+\end{align}$$
+
+where $\lambda$ is a precision (i.e., the reciprocal of the variance), $\tau_i$ is a year-specific random effect, and $\text{Normal}^+$ is a truncated normal distribution with support on the positive real line. What value should we use for $\tau$? Let’s make a pragmatic choice of setting it to $\frac{1}{n}\sum_{i=1}^{n}{y_i}$. As a sensitivity analysis, try two sets of values for $c$ and $d$ and do the following using handwritten code:
+
+### Part 1  
+
+Perform the two posterior predictive tests for the fourth model (with the two sets of values for $c$ and $d$), as we did for the original three models.
+
+
+$$
+\begin{align}
+\pi(\boldsymbol{\tau},\lambda|\mathbf{y})&\propto f(\mathbf{y}|\boldsymbol{\tau},\lambda)\pi(\boldsymbol{\tau},\lambda) \\
+&\propto f(\mathbf{y}|\boldsymbol{\tau},\lambda)\pi(\boldsymbol{\tau}|\lambda)\pi(\lambda) \\
+&\propto \left(\prod_{i=1}^{n}{\frac{\tau_{i}^{y_i}e^{-\tau_i}}{y_i!}}\right)\lambda^{n/2}e^{-\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)}\lambda^{c-1} \\
+&\propto \left(\prod_{i=1}^{n}{\tau_i^{y_i}}\right)e^{-\left[\sum_{i=1}^{n}\tau_i+\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)\right]}\lambda^{c+n/2-1}
+\end{align}
+$$
+
+$$
+\begin{align}
+\pi(\boldsymbol{\tau}_{-j},\lambda|\mathbf{y})&= \int_{0}^{\infty}{\pi(\boldsymbol{\tau},\lambda|\mathbf{y})d\tau_j} \\
+&\propto\int_{0}^{\infty}{\left(\prod_{i=1}^{n}{\tau_i^{y_i}}\right)e^{-\left[\sum_{i=1}^{n}\tau_i+\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)\right]}\lambda^{c+n/2-1}d\tau_j} \\
+&\propto\int_{0}^{\infty}{\tau_j^{y_j}e^{-\tau_j-\frac{\lambda}{2}(\tau_j-\tau)^2}d\tau_j} \\
+&\propto\int_{0}^{\infty}{\tau_j^{y_j}e^{\tau_j(\lambda\tau-1)-\frac{\lambda}{2}\tau_j^2}d\tau_j} \\
+&\propto\int_{0}^{\infty}{\tau_j^{y_j}e^{-\frac{\lambda}{2}\left(\tau_j^2-2(\tau-1/\lambda)\tau_j\right)}d\tau_j} \\
+&\propto\int_{0}^{\infty}{\tau_j^{y_j}e^{-\frac{\lambda}{2}\left(\tau_j-(\tau-1/\lambda)\right)^2}d\tau_j} \\
+&\propto\text{Mean of a Normal}(\tau-1/\lambda,\text{prec}=\lambda)\text{, conditional on being greater than 0} \\
+&\propto\tau-1/\lambda+\frac{1}{\sqrt{\lambda}}\frac{\phi\left(\frac{1/\lambda-\tau}{1/\sqrt{\lambda}}\right)}{1-\Phi\left(\frac{1/\lambda-\tau}{1/\sqrt{\lambda}}\right)},\text{ according to Wikipedia} \\
+&\propto\tau-1/\lambda+\frac{\phi\left(\lambda^{-1/2}-\tau\sqrt{\lambda}\right)}{\sqrt{\lambda}\left[1-\Phi\left(\lambda^{-1/2}-\tau\sqrt{\lambda}\right)\right]}
+\end{align}
+$$
+
+$$
+\begin{align}
+\pi(\tau_j|\boldsymbol{\tau}_{-j},\lambda,\mathbf{y})
+&=\frac{\pi(\boldsymbol{\tau},\lambda|\mathbf{y})}{\pi(\boldsymbol{\tau}_{-j},\lambda|\mathbf{y})} \\
+&\propto \frac{\left(\prod_{i=1}^{n}{\tau_i^{y_i}}\right)e^{-\left[\sum_{i=1}^{n}\tau_i+\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)\right]}\lambda^{c+n/2-1}}{\tau-1/\lambda+\frac{\phi\left(\lambda^{-1/2}-\tau\sqrt{\lambda}\right)}{\sqrt{\lambda}\left[1-\Phi\left(\lambda^{-1/2}-\tau\sqrt{\lambda}\right)\right]}} \\
+&\propto \frac{\tau_j^{y_j}e^{-\tau_j-\frac{\lambda}{2}(\tau_j-\tau)^2}}{\tau-1/\lambda+\frac{\phi\left(\lambda^{-1/2}-\tau\sqrt{\lambda}\right)}{\sqrt{\lambda}\left[1-\Phi\left(\lambda^{-1/2}-\tau\sqrt{\lambda}\right)\right]}} \\
+\end{align}
+$$
+
+This is an unknown distribution, so sampling from this will require a 
+
+$$
+\begin{align}
+\pi(\boldsymbol{\tau}|y)&=\int_{0}^{\infty}{\pi(\boldsymbol{\tau},\lambda|\mathbf{y})d\lambda} \\
+&\propto\int_{0}^{\infty}{\left(\prod_{i=1}^{n}{\tau_i^{y_i}}\right)e^{-\left[\sum_{i=1}^{n}\tau_i+\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)\right]}\lambda^{c+n/2-1}d\lambda} \\
+&\propto\int_{0}^{\infty}{e^{-\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)}\lambda^{c+n/2-1}d\lambda} \\
+&\propto\frac{\Gamma(c+n/2)}{\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)^{c+n/2}} \\
+&\propto\frac{1}{\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)^{c+n/2}}
+\end{align}
+$$
+
+
+$$
+\begin{align}
+\pi(\lambda|\boldsymbol{\tau},\mathbf{y})&=\frac{\pi(\lambda,\boldsymbol{\tau}|\mathbf{y})}{\pi(\boldsymbol{\tau}|y)} \\
+&\propto\frac{\left(\prod_{i=1}^{n}{\tau_i^{y_i}}\right)e^{-\left[\sum_{i=1}^{n}\tau_i+\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)\right]}\lambda^{c+n/2-1}}{\frac{1}{\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)^{c+n/2}}} \\
+&\propto e^{-\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)}\lambda^{c+n/2-1}
+\end{align}
+$$
+So $\lambda|\boldsymbol{\tau},\mathbf{y}\sim\text{Gamma}\left(c+\frac{n}{2},\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)$
+
+```{r}
+tau <- mean(d$accidents)
+c1 <- 1
+d1 <- 1
+c2 <- 2
+d2 <- 2
+
+full_log_conditional_tau <- function(tau_i, lambda, y_i) {
+  y_i * log(tau_i) - tau_i - lambda / 2 * (tau_i - tau)^2 - log(pnorm(0, tau-1/lambda, sd = 1/sqrt(lambda), lower.tail = FALSE))
+}
+inverse_CDF_tau_sampler <- function(lambda){
+  tau_samples <- c()
+  for(i in 1:length(e$accidents)){
+    k <- integrate(function(tau_i) exp(full_log_conditional_tau(tau_i, lambda, e$accidents[i])),0,Inf)$val
+    CDF <- function(x) integrate(function(tau_i) exp(full_log_conditional_tau(tau_i, lambda, e$accidents[i])),0,x)$val
+    tau_samples[i] <- uniroot(function(x) CDF(x) - runif(1),c(0,1000))$root
+  }
+  tau_samples
+}
+
+
+# Samples for each tau_i and each lambda
+samples <- matrix(NA, ncol = length(e$accidents) + 1, nrow = nrow(samples))
+samples[1,] <- c(e$accidents, mean(e$accidents))
+
+for(2 in 1:nrow(samples)){
+  
+}
+```
+$$\left(\prod_{i=1}^{n}{\tau_i^{y_i}}\right)e^{-\left[\sum_{i=1}^{n}\tau_i+\lambda\left(\frac{1}{2}\sum_{i=1}^{n}{(\tau_i-\tau)^2}+d\right)\right]}\lambda^{c+n/2-1}$$
+
+```{r}
+tau <- mean(e$accidents)
+c1 <- 1
+d1 <- 1
+c2 <- 4
+d2 <- 2
+n <- nrow(e)
+
+log_posterior <- function(tau_i, lambda, c, d) {
+  sum(e$accidents * log(tau_i)) - sum(tau_i) + lambda * (.5 * sum((tau_i-tau)^2)) + lambda * d + (c+n/2-1) * log(lambda)
+}
+
+get_samples <- function(c, d, num_samples = 10000, burn.in = 1000, thin = 2, tau_sd = .25, lambda_sd = .07, cor_tau_lambda = .2){
+  tot_num_samples <- num_samples * thin + burn.in
+  samples <- matrix(NA, ncol = length(e$accidents) + 1, nrow = tot_num_samples)
+  samples[1,] <- c(e$accidents, mean(e$accidents))
+  
+  tau_lambda_cov <- matrix(rep(cor_tau_lambda*tau_sd*lambda_sd,10), ncol = 1)
+  tau_cov <- tau_sd^2 * diag(10)
+  lambda_cov <- lambda_sd^2 * diag(1)
+  sampling_var <- rbind(cbind(tau_cov, tau_lambda_cov), cbind(t(tau_lambda_cov), lambda_cov))
+  
+  accept <- 0
+  pb = txtProgressBar(min = 1, max = tot_num_samples, initial = 1, style = 3) 
+  for(i in 2:tot_num_samples){
+    setTxtProgressBar(pb,i)
+    proposal <- pmax(rmvnorm(1,samples[i-1,],sampling_var),0)
+    ratio <- min(exp(log_posterior(proposal[-11],proposal[11], c, d) - log_posterior(samples[i-1,-11],samples[i-1,11], c, d)),1)
+    if(runif(1) < ratio){
+      samples[i,] <- proposal
+      accept <- accept + 1
+    } 
+    else samples[i,] <- samples[i-1,]
+  }
+  cat('\n')
+  cat(sprintf("Acceptance ratio: %3.2f%%",accept/tot_num_samples * 100))
+  samples = samples[seq(burn.in,tot_num_samples,thin),]
+}
+
+samples2 <- get_samples(c1, d1)
+
+```
+
+
+### Part 2  
+
+For the original three models and the fourth model (with the two sets of values for $c$ and $d$), compute the AIC, DIC, WAIC, and LPML. Make a table of the results and write a summary paragraph interpreting the results.
+
+## Problem 3  
+
+Stay with the airline accidents data and the four competing models for the number of accidents. Now, using blackbox software (such as Stan, Nimble, or JAGS), do the following:
+
+### Part 1  
+
+Perform the two posterior predictive tests for all four models (with the two sets of values for $c$ and $d$ for model 4) using MCMC output from your blackbox software.
+
+### Part 2  
+
+Compare the four models (with the two sets of values for $c$ and $d$) using a criterion from your blackbox software.
+
+### Part 3  
+
+Comment on the role that blackbox software will likely play in your Bayesian analyses in the future.
